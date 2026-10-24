@@ -1,0 +1,54 @@
+{
+  "rubric_version": "1.0",
+  "schema_version": "1.0",
+  "pillars": {
+    "1": {"name": "Value proposition and goal clarity", "anchors": {"0": "The visitor cannot tell what is offered, for whom, or what to do.", "50": "The offer is understandable but vague, buried below the fold, or generic enough to describe any competitor.", "100": "Offer, main benefit, audience, and next step are obvious in the first viewport on mobile and desktop, in specific language."}},
+    "2": {"name": "Message match and entry intent", "anchors": {"0": "The page contradicts or ignores the entry promise.", "50": "Same topic, but headline, offer, imagery, or price differ in a way a visitor would notice.", "100": "Headline, offer, imagery, and price visibly continue the promise that brought the visitor."}},
+    "3": {"name": "CTA and journey friction", "anchors": {"0": "The primary action is hard to find, blocked, or needs many unnecessary steps or fields.", "50": "The action is findable, but avoidable steps, fields, distractions, or unclear labels slow the visitor.", "100": "One clear primary action, minimal steps and fields, clear labels, and nothing competing with it."}},
+    "4": {"name": "Offer and pricing clarity", "anchors": {"0": "Price, inclusions, or terms are missing or confusing, with surprises before checkout.", "50": "Core price and inclusions are visible, but terms, shipping, variants, or comparisons take effort to find.", "100": "Price, inclusions, recurring terms, shipping, and availability are clear before commitment."}},
+    "5": {"name": "Trust and risk reduction", "anchors": {"0": "No proof, or proof that looks fake, generic stock, or contradicts the policies.", "50": "Some proof and policies exist but are generic, hidden, outdated, or far from the decision point.", "100": "Specific, verifiable proof sits near the decision point, and policies, contact details, and security cues are easy to find."}},
+    "6": {"name": "Visual hierarchy, mobile, and accessibility", "anchors": {"0": "The layout is hard to scan or use on a phone, with failing contrast, tiny tap targets, or broken responsive behaviour.", "50": "Usable, with several visible hierarchy, contrast, spacing, or mobile issues.", "100": "Clear scan path, strong contrast, comfortable tap targets, consistent brand styling, and no automated accessibility failures."}},
+    "7": {"name": "Speed and technical reliability", "anchors": {"0": "Core Web Vitals sit in the poor band, or the page shows loading failures, broken links, or errors.", "50": "Mixed results: some metrics in the needs-improvement band, or minor errors.", "100": "All tested Core Web Vitals sit in the good band and no visible errors appear."}},
+    "8": {"name": "Behaviour evidence and tracking health", "anchors": {"0": "Severe unexplained drop at a key step against the client's own history, or key events missing so the data cannot be trusted.", "50": "Average or mixed progression with no clear leak, or core events work but important events are missing or duplicated.", "100": "Healthy step-to-step progression and an improving trend, with events firing and reconciling."}}
+  },
+  "weights": {
+    "landing":    {"1": 14, "2": 16, "3": 16, "4": 10, "5": 14, "6": 10, "7": 10, "8": 10},
+    "homepage":   {"1": 16, "2": 6,  "3": 14, "4": 8,  "5": 12, "6": 16, "7": 12, "8": 16},
+    "product":    {"1": 10, "2": 8,  "3": 16, "4": 16, "5": 16, "6": 10, "7": 10, "8": 14},
+    "collection": {"1": 10, "2": 8,  "3": 16, "4": 10, "5": 8,  "6": 16, "7": 14, "8": 18},
+    "checkout":   {"1": 4,  "2": 0,  "3": 32, "4": 12, "5": 18, "6": 8,  "7": 10, "8": 16},
+    "lead":       {"1": 16, "2": 14, "3": 18, "4": 8,  "5": 18, "6": 8,  "7": 8,  "8": 10}
+  },
+  "bands": [
+    {"min": 90, "max": 100, "label": "Strong foundations"},
+    {"min": 75, "max": 89,  "label": "Good, with opportunities"},
+    {"min": 60, "max": 74,  "label": "Moderate"},
+    {"min": 40, "max": 59,  "label": "Weak"},
+    {"min": 0,  "max": 39,  "label": "Critical gaps"}
+  ],
+  "pillar_statuses": ["scored", "partial", "not_applicable", "needs_data", "could_not_test"],
+  "counted_statuses": ["scored", "partial"],
+  "confidence": {
+    "high_min_coverage": 85,
+    "medium_min_coverage": 60,
+    "high_min_data_days": 28,
+    "public_mode_max": "medium"
+  },
+  "thresholds": {
+    "tap_target_working_px": 44,
+    "tap_target_min_px": 24,
+    "contrast_normal_text": 4.5,
+    "lcp_good_s": 2.5, "lcp_poor_s": 4.0,
+    "inp_good_ms": 200, "inp_poor_ms": 500,
+    "cls_good": 0.1, "cls_poor": 0.25,
+    "small_sample_sessions": 100,
+    "ga4_shopify_gap_pct": 10
+  },
+  "priority": {
+    "impact": {"low": 1, "medium": 2, "high": 3},
+    "evidence": {"hypothesis": 1, "observed": 2, "measured": 3},
+    "severity": {"1": 1, "2": 2, "3": 3},
+    "effort": {"small": 1, "medium": 2, "large": 3},
+    "brand_risk": {"low": 0, "medium": 1, "high": 2}
+  }
+}
