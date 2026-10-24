@@ -14,7 +14,7 @@ export function pickProvider(): Provider | null {
 }
 
 export function modelName(p: Provider) {
-  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash,gemini-3.8-flash,gemini-3.7-flash").split(",")[0].trim();
+  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash").split(",")[0].trim();
 }
 
 /** Gemini's schema subset rejects enum on integers and some JSON Schema keys. Convert to equivalent constraints. */
@@ -65,11 +65,13 @@ export async function callStructured(opts: { provider: Provider; system: string;
     if (remaining < 8000) break;
     // The first model gets at most 60% of what is left so a slow model cannot starve its fallback.
     const budget = i === models.length - 1 ? remaining : Math.min(remaining, Math.max(25_000, remaining * 0.6));
+    const t0 = Date.now();
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${models[i]}:generateContent`, {
         method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
         signal: AbortSignal.timeout(Math.floor(budget)), body,
       });
+      console.log(`gemini ${models[i]} -> HTTP ${res.status} in ${Date.now() - t0}ms (budget ${Math.floor(budget)}ms)`);
       if (res.status === 429) { last = "RATE_LIMITED"; continue; }
       if (res.status === 503 || res.status === 500) { last = "MODEL_BUSY"; continue; }
       if (res.status === 404) { last = `Model ${models[i]} is not available to this key`; continue; }
@@ -80,7 +82,7 @@ export async function callStructured(opts: { provider: Provider; system: string;
       usedModel = models[i];
       return part.functionCall.args;
     } catch (e) {
-      if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") { last = "TIMEOUT"; continue; }
+      if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") { console.log(`gemini ${models[i]} -> timed out after ${Date.now() - t0}ms`); last = "TIMEOUT"; continue; }
       throw e;
     }
   }
@@ -89,5 +91,5 @@ export async function callStructured(opts: { provider: Provider; system: string;
 
 export let usedModel = "";
 export function geminiModels(): string[] {
-  return (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash,gemini-3.8-flash,gemini-3.7-flash").split(",").map((m) => m.trim()).filter(Boolean);
+  return (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
 }

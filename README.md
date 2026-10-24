@@ -5,7 +5,7 @@ Scores one page for conversion readiness with an LLM (free Gemini or Claude), sh
 ## Deploy on Vercel
 1. Import this repo in Vercel (framework: Next.js, no config needed).
 2. Add environment variables (Project Settings > Environment Variables). You need ONE model key:
-   - `GEMINI_API_KEY` (free tier). Get it at https://aistudio.google.com/apikey with any Google account. Default chain `gemini-3.6-flash,gemini-3.5-flash,gemini-3.8-flash,gemini-3.7-flash` (comma-separated; each model has its own free daily quota of about 20 requests) (override with `GEMINI_MODEL`). Free-tier limits apply and Google may use free-tier prompts to improve its products, so do not paste private content into the traffic-source box.
+   - `GEMINI_API_KEY` (free tier). Get it at https://aistudio.google.com/apikey with any Google account. Default chain `gemini-3.6-flash,gemini-3.5-flash` (comma-separated). Free tier allows about 20 requests per day per model. `gemini-3.7-flash` and `gemini-3.8-flash` were too slow (over 40 s) in testing (override with `GEMINI_MODEL`). Free-tier limits apply and Google may use free-tier prompts to improve its products, so do not paste private content into the traffic-source box.
    - or `ANTHROPIC_API_KEY` (paid). https://console.anthropic.com > API Keys. Used if set; `LLM_PROVIDER=gemini` forces Gemini.
    - `PAGESPEED_API_KEY` (optional). Google Cloud Console > enable "PageSpeed Insights API" > Credentials. Enables Core Web Vitals (pillar 7); without it that pillar is "Could not test" and excluded.
    Keys are used server-side only.
