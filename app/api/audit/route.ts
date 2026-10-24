@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runAudit } from "@/lib/audit";
+import { pickProvider } from "@/lib/llm";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -9,8 +10,8 @@ const hits = new Map<string, number[]>();
 const LIMIT = 5, WINDOW_MS = 10 * 60_000;
 
 export async function POST(req: NextRequest) {
-  if (!process.env.ANTHROPIC_API_KEY)
-    return NextResponse.json({ error: "The server has no ANTHROPIC_API_KEY configured." }, { status: 500 });
+  if (!pickProvider())
+    return NextResponse.json({ error: "The server has no model key configured (set GEMINI_API_KEY or ANTHROPIC_API_KEY)." }, { status: 500 });
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
   const now = Date.now();
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (e) {
+    if ((e as Error).message === "RATE_LIMITED")
+      return NextResponse.json({ error: "The free model quota is used up for now. Wait a minute and try again." }, { status: 429 });
     console.error("audit failed", e);
     return NextResponse.json({ error: "The audit failed. Please try again." }, { status: 500 });
   }

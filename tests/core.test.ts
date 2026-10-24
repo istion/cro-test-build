@@ -83,3 +83,48 @@ test("pillar 7 is scored from CWV bands only", () => {
   assert.equal(speedPillar({ LCP_band: "needs improvement", CLS_band: "good" }).score, 50);
   assert.equal(speedPillar({ could_not_test: "no key" }).status, "could_not_test");
 });
+
+test("Gemini schema has no integer enums and keeps constraints", async () => {
+  const { toGeminiSchema } = await import("../lib/llm");
+  const { SUBMIT } = await import("../lib/audit");
+  const g = toGeminiSchema(SUBMIT.input_schema);
+  const bad: string[] = [];
+  (function walk(n: any, path: string) {
+    if (n && typeof n === "object") {
+      if (n.type === "integer" && n.enum) bad.push(path);
+      if ("additionalProperties" in n) bad.push(path + ".additionalProperties");
+      for (const [k, v] of Object.entries(n)) walk(v, `${path}.${k}`);
+    }
+  })(g, "$");
+  assert.deepEqual(bad, []);
+  const sev = g.properties.findings.items.properties.severity;
+  assert.equal(sev.minimum, 1); assert.equal(sev.maximum, 3);
+});
+
+test("callStructured (gemini) sends forced function call and parses args; 429 maps to RATE_LIMITED", async () => {
+  const { callStructured } = await import("../lib/llm");
+  process.env.GEMINI_API_KEY = "test-key";
+  const real = globalThis.fetch; let sent: any, hdr: any;
+  globalThis.fetch = (async (_u: any, init: any) => { sent = JSON.parse(init.body); hdr = init.headers;
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ functionCall: { name: "t", args: { ok: 1 } } }] } }] }), { status: 200 }); }) as any;
+  try {
+    const out = await callStructured({ provider: "gemini", system: "s", user: "u", tool: { name: "t", description: "d", input_schema: { type: "object", properties: { n: { type: "integer", enum: [1, 2] } } } } });
+    assert.deepEqual(out, { ok: 1 });
+    assert.equal(sent.toolConfig.functionCallingConfig.mode, "ANY");
+    assert.equal(hdr["x-goog-api-key"], "test-key");
+    assert.equal(sent.tools[0].functionDeclarations[0].parameters.properties.n.enum, undefined);
+    globalThis.fetch = (async () => new Response("quota", { status: 429 })) as any;
+    await assert.rejects(() => callStructured({ provider: "gemini", system: "s", user: "u", tool: { name: "t", description: "d", input_schema: {} } }), /RATE_LIMITED/);
+  } finally { globalThis.fetch = real; delete process.env.GEMINI_API_KEY; }
+});
+
+test("provider selection prefers Anthropic, falls back to Gemini, null without keys", async () => {
+  const { pickProvider } = await import("../lib/llm");
+  const keep = { ...process.env };
+  delete process.env.ANTHROPIC_API_KEY; delete process.env.GEMINI_API_KEY; delete process.env.LLM_PROVIDER;
+  assert.equal(pickProvider(), null);
+  process.env.GEMINI_API_KEY = "g"; assert.equal(pickProvider(), "gemini");
+  process.env.ANTHROPIC_API_KEY = "a"; assert.equal(pickProvider(), "anthropic");
+  process.env.LLM_PROVIDER = "gemini"; assert.equal(pickProvider(), "gemini");
+  Object.assign(process.env, keep);
+});

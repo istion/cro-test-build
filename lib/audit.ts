@@ -1,9 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { callStructured, pickProvider, modelName } from "./llm";
 import { inspect, speedPillar, Inspection } from "./inspect";
 import { wrapPage } from "./injection";
 import { computeScore, rankRecommendations, PAGE_TYPES, ANCHORS, rubric, PillarIn, ScoringError } from "./scoring";
 
-const MODEL = process.env.CRO_MODEL || "claude-sonnet-5-5";
 
 export const SYSTEM = `You are the CRO Score Agent, a senior conversion rate optimisation auditor. You audit ONE page.
 You are read-only and advisory. Your job is to be specific to this page, never generic.
@@ -39,7 +38,7 @@ RECOMMENDATIONS
 
 Write in plain language a client can act on, e.g. "the first button reads 'Learn more' and does not say what happens next".`;
 
-const SUBMIT = {
+export const SUBMIT = {
   name: "submit_audit",
   description: "Submit the finished audit once.",
   input_schema: {
@@ -144,21 +143,19 @@ export async function runAudit(input: AuditInput) {
     wrapPage(`FACTS:\n${JSON.stringify({ ...ins.facts, diagnostics: ins.diagnostics }, null, 1)}\n\nPAGE TEXT (first 12000 chars):\n${ins.text.slice(0, 12000)}`, ins.finalUrl),
   ].filter(Boolean).join("\n\n");
 
-  const client = new Anthropic();
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: userMsg }];
+  const provider = pickProvider();
+  if (!provider) throw new Error("NO_KEY");
   let report: any = null, ledger: any[] = [], groundNotes: string[] = [], dropped: string[] = [];
+  let user = userMsg;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const resp = await client.messages.create({ model: MODEL, max_tokens: 12000, system, tools: [SUBMIT as any], tool_choice: { type: "tool", name: "submit_audit" }, messages });
-    const call = resp.content.find((b) => b.type === "tool_use") as Anthropic.ToolUseBlock | undefined;
-    if (!call) throw new Error("The model did not return an audit");
-    report = JSON.parse(JSON.stringify(call.input));
+    report = await callStructured({ provider, system, user, tool: SUBMIT as any });
     ({ ledger, notes: groundNotes } = groundLedger(report.ledger ?? [], haystack) as any);
     const problems = selfCheck(report, ledger);
     if (!problems.length) { dropped = []; break; }
     if (attempt === 1) { dropped = strip(report, problems); break; }
-    messages.push({ role: "assistant", content: resp.content });
-    messages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: call.id, content: `Problems found by the code check. Fix exactly these and submit again:\n- ${problems.join("\n- ")}` }] });
+    user = [userMsg, "Your previous submission failed the code check. Submit a corrected audit that fixes exactly these problems:",
+      ...problems.map((p) => `- ${p}`), "Previous submission:", JSON.stringify(report)].join("\n\n");
   }
 
   // Code owns statuses and pillar 7.
@@ -221,6 +218,6 @@ export async function runAudit(input: AuditInput) {
       shopify: ins.shopify, traffic_source_supplied: !!input.trafficSource },
     score, ledger, findings: report.findings, recommendations: recs,
     integrity_flags: ins.flags, limitations: limits, human_review_flags: human,
-    facts: ins.facts, diagnostics: ins.diagnostics, model: MODEL,
+    facts: ins.facts, diagnostics: ins.diagnostics, model: `${provider}:${modelName(provider)}`,
   };
 }
