@@ -1,3 +1,4 @@
+import * as llm from "./llm";
 import { callStructured, pickProvider, modelName } from "./llm";
 import { inspect, speedPillar, Inspection } from "./inspect";
 import { wrapPage } from "./injection";
@@ -140,33 +141,43 @@ export async function runAudit(input: AuditInput) {
     `Audit this page: ${ins.finalUrl}`, input.goal ? `User-stated goal: ${input.goal}` : "",
     input.trafficSource ? `Traffic source supplied (pillar 2 may be 'scored'):\n<external_source trust="untrusted">\n${input.trafficSource.slice(0, 1500).replace(/<\/?external_source>/gi, "")}\n</external_source>` : "No traffic source supplied: pillar 2 can only be 'partial' (internal consistency).",
     `Tool-measured facts (JSON) and page text follow.`,
-    wrapPage(`FACTS:\n${JSON.stringify({ ...ins.facts, diagnostics: ins.diagnostics }, null, 1)}\n\nPAGE TEXT (first 12000 chars):\n${ins.text.slice(0, 12000)}`, ins.finalUrl),
+    wrapPage(`FACTS:\n${JSON.stringify({ ...ins.facts, diagnostics: ins.diagnostics }, null, 1)}\n\nPAGE TEXT (first 9000 chars):\n${ins.text.slice(0, 9000)}`, ins.finalUrl),
   ].filter(Boolean).join("\n\n");
 
   const provider = pickProvider();
   if (!provider) throw new Error("NO_KEY");
   let report: any = null, ledger: any[] = [], groundNotes: string[] = [], dropped: string[] = [];
   let user = userMsg;
+  const deadline = Date.now() + 100_000; // shared by every model call; the route allows 120 s in total
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    report = await callStructured({ provider, system, user, tool: SUBMIT as any });
+    report = await callStructured({ provider, system, user, tool: SUBMIT as any, deadline });
     ({ ledger, notes: groundNotes } = groundLedger(report.ledger ?? [], haystack) as any);
     const problems = selfCheck(report, ledger);
     if (!problems.length) { dropped = []; break; }
-    if (attempt === 1) { dropped = strip(report, problems); break; }
+    // A second model call only if enough time is left; otherwise remove what failed rather than risk a timeout.
+    if (attempt === 1 || deadline - Date.now() < 45_000) { dropped = strip(report, problems); break; }
     user = [userMsg, "Your previous submission failed the code check. Submit a corrected audit that fixes exactly these problems:",
       ...problems.map((p) => `- ${p}`), "Previous submission:", JSON.stringify(report)].join("\n\n");
   }
 
+  const normNotes: string[] = [];
   // Code owns statuses and pillar 7.
   const speed = speedPillar(ins.diagnostics);
   const speedEntry = speed.status === "scored"
     ? { id: "E-T01", pillar: 7, observation: "Core Web Vitals from PageSpeed Insights (lab)", quote: JSON.stringify(ins.diagnostics), location: "PageSpeed Insights, mobile", evidence_type: "measured", verified: true } : null;
   if (speedEntry) ledger.push(speedEntry);
   const pillars: PillarIn[] = [
-    ...report.pillars.filter((p: any) => p.id >= 1 && p.id <= 6).map((p: any) => ({
-      id: p.id, status: p.id === 6 && p.status === "scored" ? "partial" : p.id === 2 && !input.trafficSource && p.status === "scored" ? "partial" : p.status,
-      score: p.score, evidence_ids: p.evidence_ids ?? [], interpretation: p.interpretation })),
+    ...report.pillars.filter((p: any) => p.id >= 1 && p.id <= 6).map((p: any) => {
+      // Models sometimes return 63 or "70". Snap to the rubric's steps of 5 and say so; a missing score means the pillar was not judged.
+      const raw = Number(p.score), counted = p.status === "scored" || p.status === "partial";
+      const valid = counted && Number.isFinite(raw);
+      const snapped = valid ? Math.min(100, Math.max(0, Math.round(raw / 5) * 5)) : null;
+      if (valid && snapped !== raw) normNotes.push(`Pillar ${p.id}: model score ${raw} was rounded to ${snapped} (rubric steps of 5)`);
+      if (counted && !valid) normNotes.push(`Pillar ${p.id}: the model gave no score, so the pillar was excluded`);
+      const status = !counted || !valid ? "needs_data" : p.id === 6 && p.status === "scored" ? "partial" : p.id === 2 && !input.trafficSource && p.status === "scored" ? "partial" : p.status;
+      return { id: p.id, status, score: snapped, evidence_ids: p.evidence_ids ?? [], interpretation: p.interpretation };
+    }),
     { id: 7, ...speed, evidence_ids: speedEntry ? ["E-T01"] : [], interpretation: speed.status === "scored" ? "Scored by code from PageSpeed Insights bands." : String(ins.diagnostics.could_not_test) },
     { id: 8, status: "needs_data", interpretation: "A public audit cannot see visitor behaviour. Supply GA4 or Shopify analytics to score this." },
   ];
@@ -208,7 +219,7 @@ export async function runAudit(input: AuditInput) {
     "A score is a readiness estimate for prioritising work. It does not predict revenue, and only a valid experiment can show what raises conversion.",
     ...(speed.status === "could_not_test" ? [`Performance: ${ins.diagnostics.could_not_test}`] : []),
     ...(ins.facts.truncated ? ["The page was larger than 2 MB and was truncated."] : []),
-    ...groundNotes, ...dropped,
+    ...groundNotes, ...normNotes, ...dropped,
   ];
 
   return {
@@ -218,6 +229,6 @@ export async function runAudit(input: AuditInput) {
       shopify: ins.shopify, traffic_source_supplied: !!input.trafficSource },
     score, ledger, findings: report.findings, recommendations: recs,
     integrity_flags: ins.flags, limitations: limits, human_review_flags: human,
-    facts: ins.facts, diagnostics: ins.diagnostics, model: `${provider}:${modelName(provider)}`,
+    facts: ins.facts, diagnostics: ins.diagnostics, model: `${provider}:${provider === "gemini" ? llm.usedModel || modelName(provider) : modelName(provider)}`,
   };
 }

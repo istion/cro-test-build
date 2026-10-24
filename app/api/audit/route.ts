@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runAudit } from "@/lib/audit";
 import { pickProvider } from "@/lib/llm";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 // Best-effort limiter (per serverless instance). It protects the API key from casual abuse, not from a determined attacker.
@@ -35,10 +35,10 @@ export async function POST(req: NextRequest) {
     if ((e as Error).message === "RATE_LIMITED")
       return NextResponse.json({ error: "The free model quota is used up for now. Wait a minute and try again." }, { status: 429 });
     const m = (e as Error).message;
-    if (m === "MODEL_BUSY")
+    if (m === "MODEL_BUSY" || m === "RATE_LIMITED")
       return NextResponse.json({ error: "The model is overloaded right now. Please try again in a minute." }, { status: 503 });
-    if ((e as Error).name === "TimeoutError")
-      return NextResponse.json({ error: "The model took too long to answer (over the 60 second limit). Try again, or ask the owner to switch to a faster model." }, { status: 504 });
+    if (m === "TIMEOUT" || (e as Error).name === "TimeoutError")
+      return NextResponse.json({ error: "The model took too long to answer Please try again." }, { status: 504 });
     console.error("audit failed", e);
     return NextResponse.json({ error: "The audit failed. Please try again." }, { status: 500 });
   }
