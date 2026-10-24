@@ -48,19 +48,26 @@ export async function callStructured(opts: { provider: Provider; system: string;
     return JSON.parse(JSON.stringify(call.input));
   }
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName(provider)}:generateContent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
-    signal: AbortSignal.timeout(Number(process.env.LLM_TIMEOUT_MS) || 55_000),
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: user }] }],
-      tools: [{ functionDeclarations: [{ name: tool.name, description: tool.description, parameters: toGeminiSchema(tool.input_schema) }] }],
-      toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [tool.name] } },
-      generationConfig: { temperature: 0.2, maxOutputTokens: 12000 },
-    }),
+  const thinking = process.env.GEMINI_THINKING; // optional, e.g. "low"; only sent when set so a wrong value cannot break calls
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    tools: [{ functionDeclarations: [{ name: tool.name, description: tool.description, parameters: toGeminiSchema(tool.input_schema) }] }],
+    toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [tool.name] } },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 12000, ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}) },
   });
+  const deadline = Date.now() + (Number(process.env.LLM_TIMEOUT_MS) || 55_000);
+  let res!: Response;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName(provider)}:generateContent`, {
+      method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
+      signal: AbortSignal.timeout(Math.max(1000, deadline - Date.now())), body,
+    });
+    if (res.status !== 503 || deadline - Date.now() < 20_000) break; // one retry on "high demand" if time remains
+    await new Promise((r) => setTimeout(r, 2000));
+  }
   if (res.status === 429) throw new Error("RATE_LIMITED");
+  if (res.status === 503) throw new Error("MODEL_BUSY");
   if (!res.ok) throw new Error(`Gemini returned HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
   const part = data.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall);
