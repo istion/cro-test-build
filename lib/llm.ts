@@ -14,7 +14,7 @@ export function pickProvider(): Provider | null {
 }
 
 export function modelName(p: Provider) {
-  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : process.env.GEMINI_MODEL || "gemini-3.8-flash";
 }
 
 /** Gemini's schema subset rejects enum on integers and some JSON Schema keys. Convert to equivalent constraints. */
@@ -51,7 +51,7 @@ export async function callStructured(opts: { provider: Provider; system: string;
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName(provider)}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
-    signal: AbortSignal.timeout(55_000),
+    signal: AbortSignal.timeout(Number(process.env.LLM_TIMEOUT_MS) || 55_000),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
