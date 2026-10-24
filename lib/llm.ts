@@ -14,7 +14,7 @@ export function pickProvider(): Provider | null {
 }
 
 export function modelName(p: Provider) {
-  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash").split(",")[0].trim();
+  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash,gemini-3.8-flash,gemini-3.7-flash").split(",")[0].trim();
 }
 
 /** Gemini's schema subset rejects enum on integers and some JSON Schema keys. Convert to equivalent constraints. */
@@ -89,5 +89,5 @@ export async function callStructured(opts: { provider: Provider; system: string;
 
 export let usedModel = "";
 export function geminiModels(): string[] {
-  return (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
+  return (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash,gemini-3.8-flash,gemini-3.7-flash").split(",").map((m) => m.trim()).filter(Boolean);
 }

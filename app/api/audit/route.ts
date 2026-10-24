@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (e) {
     if ((e as Error).message === "RATE_LIMITED")
-      return NextResponse.json({ error: "The free model quota is used up for now. Wait a minute and try again." }, { status: 429 });
+      return NextResponse.json({ error: "The free Gemini quota for today is used up (the free tier allows about 20 requests per day per model). It resets daily, around 12:30 PM IST. The site owner can remove this limit by enabling billing on the Google project behind the key." }, { status: 429 });
     const m = (e as Error).message;
     if (m === "MODEL_BUSY" || m === "RATE_LIMITED")
       return NextResponse.json({ error: "The model is overloaded right now. Please try again in a minute." }, { status: 503 });
