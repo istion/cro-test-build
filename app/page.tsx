@@ -14,8 +14,9 @@ export default function Home() {
     e.preventDefault(); setBusy(true); setErr(""); setR(null);
     try {
       const res = await fetch("/api/audit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, trafficSource: source || undefined }) });
-      const j = await res.json();
-      if (!res.ok) setErr(j.error ?? "Something went wrong"); else setR(j);
+      const j = await res.json().catch(() => null);
+      if (!j) setErr("The audit took too long and the server stopped it. Please try again.");
+      else if (!res.ok) setErr(j.error ?? "Something went wrong"); else setR(j);
     } catch { setErr("Could not reach the server"); }
     setBusy(false);
   }

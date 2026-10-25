@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runAudit } from "@/lib/audit";
 import { pickProvider } from "@/lib/llm";
 
-export const maxDuration = 120;
+export const maxDuration = 180;
 export const dynamic = "force-dynamic";
 
 // Best-effort limiter (per serverless instance). It protects the API key from casual abuse, not from a determined attacker.

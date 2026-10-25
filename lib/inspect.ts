@@ -141,7 +141,7 @@ async function pageSpeed(url: string) {
   const key = process.env.PAGESPEED_API_KEY;
   if (!key) return { could_not_test: "No PAGESPEED_API_KEY configured, so Core Web Vitals were not measured" };
   try {
-    const r = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?strategy=mobile&category=performance&url=${encodeURIComponent(url)}&key=${key}`, { signal: AbortSignal.timeout(40_000) });
+    const r = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?strategy=mobile&category=performance&url=${encodeURIComponent(url)}&key=${key}`, { signal: AbortSignal.timeout(20_000) });
     if (!r.ok) return { could_not_test: `PageSpeed Insights returned HTTP ${r.status}` };
     const d = await r.json(); const a = d.lighthouseResult?.audits ?? {}; const t = rubric.thresholds;
     const lcp = a["largest-contentful-paint"]?.numericValue / 1000, cls = a["cumulative-layout-shift"]?.numericValue;

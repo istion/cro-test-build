@@ -132,6 +132,7 @@ function strip(r: any, problems: string[]) {
 export type AuditInput = { url: string; trafficSource?: string; goal?: string };
 
 export async function runAudit(input: AuditInput) {
+  const t0 = Date.now(); // the route allows 180 s in total; page inspection counts against it
   const ins: Inspection = await inspect(input.url);
   if (ins.couldNotAudit) return { could_not_audit: ins.couldNotAudit, url: input.url, integrity_flags: ins.flags, fetched_at: ins.fetchedAt };
 
@@ -149,7 +150,7 @@ export async function runAudit(input: AuditInput) {
   if (!provider) throw new Error("NO_KEY");
   let report: any = null, ledger: any[] = [], groundNotes: string[] = [], dropped: string[] = [];
   let user = userMsg;
-  const deadline = Date.now() + 100_000; // shared by every model call; the route allows 120 s in total
+  const deadline = t0 + 140_000; // shared by every model call, measured from the start of the request
 
   let fallback: string | null = null;
   try {
