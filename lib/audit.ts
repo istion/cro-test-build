@@ -149,7 +149,7 @@ export async function runAudit(input: AuditInput) {
   if (!provider) throw new Error("NO_KEY");
   let report: any = null, ledger: any[] = [], groundNotes: string[] = [], dropped: string[] = [];
   let user = userMsg;
-  const deadline = Date.now() + 90_000; // shared by every model call; the route allows 120 s in total
+  const deadline = Date.now() + 100_000; // shared by every model call; the route allows 120 s in total
 
   let fallback: string | null = null;
   try {

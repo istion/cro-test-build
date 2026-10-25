@@ -14,7 +14,7 @@ export function pickProvider(): Provider | null {
 }
 
 export function modelName(p: Provider) {
-  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash").split(",")[0].trim();
+  return p === "anthropic" ? process.env.CRO_MODEL || "claude-sonnet-5-5" : (process.env.GEMINI_MODEL || "gemini-3.1-pro-preview,gemini-3.6-flash").split(",")[0].trim();
 }
 
 /** Gemini's schema subset rejects enum on integers and some JSON Schema keys. Convert to equivalent constraints. */
@@ -65,8 +65,8 @@ export async function callStructured(opts: { provider: Provider; system: string;
   for (let i = 0; i < models.length; i++) {
     const remaining = deadline - Date.now();
     if (remaining < 8000) break;
-    // The first model gets at most 60% of what is left so a slow model cannot starve its fallback.
-    const budget = i === models.length - 1 ? remaining : Math.min(remaining, Math.max(25_000, remaining * 0.6));
+    // The first model gets at most 65% of what is left so a slow model cannot starve its fallback.
+    const budget = i === models.length - 1 ? remaining : Math.min(remaining, Math.max(25_000, remaining * 0.65));
     const t0 = Date.now();
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${models[i]}:generateContent`, {
@@ -93,5 +93,5 @@ export async function callStructured(opts: { provider: Provider; system: string;
 
 export let usedModel = "";
 export function geminiModels(): string[] {
-  return (process.env.GEMINI_MODEL || "gemini-3.6-flash,gemini-3.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
+  return (process.env.GEMINI_MODEL || "gemini-3.1-pro-preview,gemini-3.6-flash").split(",").map((m) => m.trim()).filter(Boolean);
 }
