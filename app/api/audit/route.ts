@@ -24,22 +24,31 @@ export async function POST(req: NextRequest) {
   const url = typeof body.url === "string" ? body.url.trim() : "";
   if (!url || url.length > 2000) return NextResponse.json({ error: "Enter a page URL" }, { status: 400 });
 
-  try {
-    const result = await runAudit({
-      url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
-      trafficSource: typeof body.trafficSource === "string" ? body.trafficSource : undefined,
-      goal: typeof body.goal === "string" ? body.goal.slice(0, 300) : undefined,
-    });
-    return NextResponse.json(result);
-  } catch (e) {
-    if ((e as Error).message === "RATE_LIMITED")
-      return NextResponse.json({ error: "The free Gemini quota for today is used up (the free tier allows about 20 requests per day per model). It resets daily, around 12:30 PM IST. The site owner can remove this limit by enabling billing on the Google project behind the key." }, { status: 429 });
-    const m = (e as Error).message;
-    if (m === "MODEL_BUSY" || m === "RATE_LIMITED")
-      return NextResponse.json({ error: "The model is overloaded right now. Please try again in a minute." }, { status: 503 });
-    if (m === "TIMEOUT" || (e as Error).name === "TimeoutError")
-      return NextResponse.json({ error: "The model took too long to answer Please try again." }, { status: 504 });
-    console.error("audit failed", e);
-    return NextResponse.json({ error: "The audit failed. Please try again." }, { status: 500 });
-  }
+  // An audit takes one to two minutes. A silent request that long is dropped by many proxies and corporate networks,
+  // which the page reports as "Could not reach the server". So the reply starts at once and sends a space every few
+  // seconds; JSON ignores leading whitespace, and the real result follows. Errors travel in the body for the same reason.
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(c) {
+      c.enqueue(enc.encode(" "));
+      const beat = setInterval(() => { try { c.enqueue(enc.encode(" ")); } catch { /* client went away */ } }, 8000);
+      let out: any;
+      try {
+        out = await runAudit({
+          url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
+          trafficSource: typeof body.trafficSource === "string" ? body.trafficSource : undefined,
+          goal: typeof body.goal === "string" ? body.goal.slice(0, 300) : undefined,
+        });
+      } catch (e) {
+        const m = (e as Error).message;
+        if (m === "RATE_LIMITED") out = { error: "The Gemini quota is used up for now. Please try again later." };
+        else if (m === "MODEL_BUSY") out = { error: "The model is overloaded right now. Please try again in a minute." };
+        else if (m === "TIMEOUT" || (e as Error).name === "TimeoutError") out = { error: "The model took too long to answer. Please try again." };
+        else { console.error("audit failed", e); out = { error: "The audit failed. Please try again." }; }
+      }
+      clearInterval(beat);
+      try { c.enqueue(enc.encode(JSON.stringify(out))); c.close(); } catch { /* client went away */ }
+    },
+  });
+  return new Response(stream, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }

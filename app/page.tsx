@@ -65,9 +65,9 @@ export default function Home() {
     setBusy(true); setErr(""); setR(null); setSaved(null); setAsking(false);
     try {
       const res = await fetch("/api/audit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, trafficSource: source || undefined }) });
-      const j = await res.json().catch(() => null);
+      const j = await res.text().then((t) => JSON.parse(t)).catch(() => null);
       if (!j) setErr("The audit took too long and the server stopped it. Please try again.");
-      else if (!res.ok) setErr(j.error ?? "Something went wrong");
+      else if (!res.ok || j.error) setErr(j.error ?? "Something went wrong");
       else {
         setR(j);
         // Only full model audits are kept. A rules-only or could-not-audit result should not block a proper run.
@@ -77,7 +77,7 @@ export default function Home() {
           saveHistory(next); setHist(loadHistory());
         }
       }
-    } catch { setErr("Could not reach the server"); }
+    } catch { setErr("The connection dropped before the audit finished. Please try again; if it keeps happening, your network may be cutting long requests."); }
     setBusy(false);
   }
 
