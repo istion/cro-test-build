@@ -1,11 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 
+/** Display names for the pillar statuses the score engine returns. */
 const STATUS: Record<string, string> = { scored: "Scored", partial: "Partial", not_applicable: "Not applicable", needs_data: "Needs data", could_not_test: "Could not test" };
 
+/** Progress steps shown while an audit runs. They are an estimate by elapsed time, not live server events. */
 const STEPS = ["Fetching the page and checking robots.txt", "Reading the page facts", "Measuring speed", "Judging the eight pillars with evidence", "Verifying every quote and scoring in code"];
+/** Short pillar names shown as chips in the hero (same order as pillars 1 to 8). */
 const PILLARS = ["Value proposition", "Message match", "CTA and friction", "Offer and pricing", "Trust", "Hierarchy, mobile, accessibility", "Speed", "Behaviour data"];
 
+/** Counts whole seconds while `on` is true and resets to 0 when it turns off. Drives the elapsed timer and the progress steps. */
 function useElapsed(on: boolean) {
   const [t, setT] = useState(0);
   useEffect(() => { if (!on) { setT(0); return; } const i = setInterval(() => setT((x) => x + 1), 1000); return () => clearInterval(i); }, [on]);
@@ -13,8 +17,11 @@ function useElapsed(on: boolean) {
 }
 
 
+/** History settings. Reports are kept in this browser's localStorage under HKEY for 72 hours (TTL), at most MAX_ENTRIES of them. */
 const HKEY = "cro-history-v1", TTL = 72 * 3600_000, MAX_ENTRIES = 12;
+/** Reasons offered before a new model run is allowed for a page that already has a saved report. */
 const REASONS = ["The page has changed since the last audit", "I am testing a different traffic source or goal", "The earlier result looked wrong", "Another reason"];
+/** One saved report: the normalised page key, the URL shown, when it was saved, why a re-run was requested (if it was), and the full result. */
 type Entry = { key: string; url: string; at: number; reason?: string; r: any };
 
 /** Same page, however it was typed: no www, no hash, no tracking parameters, no trailing slash. */
@@ -25,20 +32,27 @@ function pageKey(u: string) {
     return x.host.toLowerCase().replace(/^www\./, "") + (x.pathname.replace(/\/+$/, "") || "") + x.search;
   } catch { return u.trim().toLowerCase(); }
 }
+/** Reads saved reports, dropping any older than 72 hours. Returns [] if storage is empty, blocked or corrupt. */
 function loadHistory(): Entry[] {
   try { const a = JSON.parse(localStorage.getItem(HKEY) ?? "[]") as Entry[]; return a.filter((e) => Date.now() - e.at < TTL); } catch { return []; }
 }
+/** Writes the newest reports first. If the browser's storage is full, drops the oldest entry until the write succeeds. */
 function saveHistory(list: Entry[]) {
   let l = list.slice(0, MAX_ENTRIES);
   while (l.length) { try { localStorage.setItem(HKEY, JSON.stringify(l)); return; } catch { l = l.slice(0, -1); } }
   try { localStorage.removeItem(HKEY); } catch { /* storage unavailable */ }
 }
+/** Plain-language age such as "5 minutes ago", "3 hours ago" or "2 days ago". */
 function ago(ms: number) {
   const m = Math.max(1, Math.round(ms / 60000));
   if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
   const h = Math.round(m / 60);
   return h < 48 ? `${h} hour${h === 1 ? "" : "s"} ago` : `${Math.round(h / 24)} days ago`;
 }
+/**
+ * Opens the browser print window so the user can choose "Save as PDF". The page title becomes the suggested file name
+ * (CRO report <host> <date>) and is restored afterwards. The print stylesheet in globals.css shapes the output.
+ */
 function printReport(url: string) {
   const old = document.title;
   let host = "page"; try { host = new URL(url).host.replace(/^www\./, ""); } catch { /* keep default */ }
@@ -48,6 +62,11 @@ function printReport(url: string) {
   window.print();
 }
 
+/**
+ * The whole page: the URL form, progress, saved-report notice, history list and the audit report, with the explainer at the bottom.
+ *
+ * Submitting a page that was audited in the last 72 hours shows the saved report instead of calling the model; a new run needs a reason.
+ */
 export default function Home() {
   const [url, setUrl] = useState("");
   const [source, setSource] = useState("");
@@ -59,12 +78,19 @@ export default function Home() {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const t = useElapsed(busy);
+  // Read saved reports after the first render (localStorage does not exist during server rendering).
   useEffect(() => { setHist(loadHistory()); }, []);
 
+  /**
+   * Runs a new audit through the API and shows the result.
+   * Only full model audits with a score are saved to history; rules-only and could-not-audit results are not, so they never block a proper run.
+   * @param why  the reason the user gave for re-running, stored with the new entry
+   */
   async function audit(why?: string) {
     setBusy(true); setErr(""); setR(null); setSaved(null); setAsking(false);
     try {
       const res = await fetch("/api/audit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, trafficSource: source || undefined }) });
+      // The body can begin with heartbeat spaces, which JSON.parse ignores. An unreadable body means the server was cut off.
       const j = await res.text().then((t) => JSON.parse(t)).catch(() => null);
       if (!j) setErr("The audit took too long and the server stopped it. Please try again.");
       else if (!res.ok || j.error) setErr(j.error ?? "Something went wrong");
@@ -81,6 +107,7 @@ export default function Home() {
     setBusy(false);
   }
 
+  /** Form submit. If the same page (however typed) has a saved report from the last 72 hours, show it and do not call the API. */
   function run(e: React.FormEvent) {
     e.preventDefault();
     const hit = loadHistory().find((x) => x.key === pageKey(url));
@@ -88,17 +115,22 @@ export default function Home() {
     audit();
   }
 
+  /** Opens a saved report from the history list without any model call. */
   function open(en: Entry) { setUrl(en.url); setErr(""); setR(en.r); setSaved(en); setAsking(false); setReason(""); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  /** Deletes every saved report from this browser. */
   function clearHistory() { try { localStorage.removeItem(HKEY); } catch { /* ignore */ } setHist([]); }
+  // Which progress step is active, chosen by elapsed seconds; the last step stays active until the result arrives.
   const step = Math.min(STEPS.length - 1, t < 4 ? 0 : t < 8 ? 1 : t < 14 ? 2 : t < 70 ? 3 : 4);
 
   return (
     <div className="wrap">
+      {/* Top bar */}
       <div className="bar">
         <div className="brand"><span className="logo" aria-hidden>◎</span>CRO Score Agent</div>
         <span className="tag">Advisory only · read-only</span>
       </div>
 
+      {/* Hero: headline, URL box, optional traffic-source text, pillar chips and any error */}
       <form className="hero" onSubmit={run}>
         <h1>Score one page for <em>conversion readiness</em></h1>
         <p className="lead">Every point lost cites a quote from the page and is verified by code. The score is calculated by fixed rules, and the agent says what it could not check.</p>
@@ -113,6 +145,7 @@ export default function Home() {
         {err && <p className="err" role="alert">{err}</p>}
       </form>
 
+      {/* Recent audits: click one to reopen it without a model run */}
       {!busy && hist.length > 0 && (
         <section className="card noprint">
           <div className="row"><h2>Recent audits</h2><button className="link" onClick={clearHistory}>Clear history</button></div>
@@ -126,6 +159,7 @@ export default function Home() {
         </section>
       )}
 
+      {/* Notice shown while the report on screen is a saved one, with the reason prompt for a new run */}
       {saved && !busy && (
         <div className="notice noprint" role="status">
           <b>Showing the saved report from {ago(Date.now() - saved.at)}.</b> This page was audited within the last 72 hours, so no new model run was started.
@@ -144,6 +178,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* Progress card while the audit runs */}
       {busy && (
         <section className="card" aria-live="polite">
           <h2>Auditing your page</h2>
@@ -152,28 +187,35 @@ export default function Home() {
         </section>
       )}
 
+      {/* The page could not be read: no score, only the reason */}
       {r?.could_not_audit && (
         <section className="card"><h2>Could not audit</h2><p className="muted sub">{r.could_not_audit}</p><p>No score is given for a page that cannot be inspected.</p>
           {r.integrity_flags?.length > 0 && <Flags flags={r.integrity_flags} />}</section>
       )}
 
+      {/* Rules-only result notice */}
       {r?.fallback && (
         <div className="notice" role="status"><b>Rules-only result.</b> The AI audit was unavailable because {r.fallback.reason}. This score comes from fixed checks on the page markup, so coverage is limited and findings are generic. Try again later for the full agent audit.</div>
       )}
 
+      {/* The report */}
       {r?.score && <Report r={r} at={saved?.at} />}
 
+      {/* How the agent works, guardrails and limitations */}
       <Explainer />
     </div>
   );
 }
 
+/** Lists the instruction-like passages found on the page. They were flagged and ignored, never obeyed. */
 function Flags({ flags }: { flags: any[] }) {
   return <ul>{flags.map((f, i) => <li key={i}>Ignored instruction-like text ({f.pattern}) in {f.location}: <q>{f.excerpt}</q></li>)}</ul>;
 }
 
+/** Colour for a score: green from 75, amber from 55, red below; grey when the pillar has no score. */
 const tone = (n: number | null) => (n === null ? "var(--line)" : n >= 75 ? "var(--good)" : n >= 55 ? "var(--warn)" : "var(--bad)");
 
+/** Circular score gauge drawn in SVG. The arc length is the score's share of the circle's circumference. */
 function Ring({ value }: { value: number }) {
   const R = 72, C = 2 * Math.PI * R;
   return (
@@ -187,16 +229,27 @@ function Ring({ value }: { value: number }) {
   );
 }
 
+/**
+ * The audit report: score and pillar cards, the logic table, findings with verified quotes, the prioritised plan, flags and limitations.
+ * @param at  when a saved report was produced, shown in the PDF header (defaults to now)
+ */
 function Report({ r, at }: { r: any; at?: number }) {
+  // s = score engine output, a = audit details (URL, page type, goal).
   const s = r.score, a = r.audit;
+  // Pillar lookup so a finding can show its pillar's name.
   const byId: Record<number, any> = Object.fromEntries(s.pillars.map((p: any) => [p.id, p]));
+  // Display order of the plan groups.
   const buckets = ["Quick wins", "Medium changes", "Experiments", "Strategic hypotheses"];
+  // Colour of the confidence chip.
   const conf = s.confidence === "High" ? "good" : s.confidence === "Medium" ? "info" : "warn";
   return (
     <>
+      {/* Header that only appears in the printed or PDF version */}
       <div className="printhead"><b>CRO Score Agent report</b><span>{a.final_url} · {new Date(at ?? Date.now()).toLocaleString()}</span></div>
+      {/* PDF button (hidden when printing) */}
       <div className="exportbar noprint"><button className="btn" onClick={() => printReport(a.final_url)}>Download as PDF</button><span className="muted small">Opens your browser&apos;s print window. Choose &quot;Save as PDF&quot;.</span></div>
       <section className="card">
+        {/* Score ring and headline facts */}
         <div className="scorecard">
           <Ring value={s.overall} />
           <div>
@@ -211,6 +264,7 @@ function Report({ r, at }: { r: any; at?: number }) {
             {s.excluded.length > 0 && <p className="muted small">Not counted against the page: {s.excluded.map((p: any) => `${p.name} (${STATUS[p.status]})`).join(", ")}.</p>}
           </div>
         </div>
+        {/* One card per pillar: score, bar, status, weight and what was judged */}
         <div className="pgrid">
           {s.pillars.map((p: any) => (
             <div key={p.id} className="pcard">
@@ -223,6 +277,7 @@ function Report({ r, at }: { r: any; at?: number }) {
       </section>
 
       <section className="card">
+        {/* Shows every number behind the total so the score can be checked by hand */}
         <h2>Logic behind the score</h2>
         <p className="muted sub">Score = sum(weight × pillar score) ÷ sum(weight of pillars that could be scored). Missing data lowers confidence, never the score.</p>
         <div className="tablewrap"><table>
@@ -237,6 +292,7 @@ function Report({ r, at }: { r: any; at?: number }) {
       </section>
 
       <section className="card">
+        {/* Most severe first; each cites the quote it rests on and whether code found that quote on the page */}
         <h2>Findings</h2>
         <p className="muted sub">Each finding shows the exact quote it rests on and whether code found that quote on the page.</p>
         {[...r.findings].sort((x: any, y: any) => y.severity - x.severity).map((f: any) => (
@@ -250,6 +306,7 @@ function Report({ r, at }: { r: any; at?: number }) {
       </section>
 
       <section className="card">
+        {/* Recommendations grouped by effort bucket, ranked by the priority formula */}
         <h2>Prioritised plan</h2>
         <p className="muted sub">Priority = (Impact × Evidence × Severity) ÷ (Effort + Brand risk). Impact is low, medium or high; no uplift is promised.</p>
         {buckets.map((b) => { const items = r.recommendations.filter((x: any) => x.bucket === b); return items.length > 0 && (
@@ -263,17 +320,21 @@ function Report({ r, at }: { r: any; at?: number }) {
             </div>))}</div>); })}
       </section>
 
+      {/* Manipulation attempts found on the page */}
       {r.integrity_flags.length > 0 && <section className="card"><h2>Integrity flags</h2><Flags flags={r.integrity_flags} /></section>}
+      {/* Human-review items and limitations side by side */}
       <div className="cols">
         {r.human_review_flags.length > 0 && <section className="card"><h2>Needs human review</h2><ul>{r.human_review_flags.map((h: string, i: number) => <li key={i}>{h}</li>)}</ul></section>}
         <section className="card"><h2>Limitations of this audit</h2><ul>{r.limitations.map((l: string, i: number) => <li key={i}>{l}</li>)}</ul></section>
       </div>
+      {/* Raw evidence for anyone who wants to check the audit (not in the PDF) */}
       <details className="card noprint"><summary>Evidence ledger and measured facts</summary>
         <pre>{JSON.stringify({ ledger: r.ledger, facts: r.facts, diagnostics: r.diagnostics }, null, 1)}</pre></details>
     </>
   );
 }
 
+/** Static explanation of the design: why this is an agent, how it differs from a generic CRO prompt, the guardrails, the score logic and the limitations. */
 function Explainer() {
   return (
     <section className="card noprint" id="how">

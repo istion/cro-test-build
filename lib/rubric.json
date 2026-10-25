@@ -41,8 +41,7 @@
     "lcp_good_s": 2.5, "lcp_poor_s": 4.0,
     "inp_good_ms": 200, "inp_poor_ms": 500,
     "cls_good": 0.1, "cls_poor": 0.25,
-    "small_sample_sessions": 100,
-    "ga4_shopify_gap_pct": 10
+    "small_sample_sessions": 100
   },
   "priority": {
     "impact": {"low": 1, "medium": 2, "high": 3},

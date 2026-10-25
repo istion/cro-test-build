@@ -1,3 +1,4 @@
+/* Design tokens. Colours are variables so dark mode and print can swap the whole palette in one place. */
 :root {
   --bg:#f5f3ee; --surface:#fff; --surface2:#efece5; --fg:#16181d; --muted:#5e6470; --line:#e1ddd3;
   --ink:#10151c; --ink-fg:#f3f1ea; --ink-muted:#9aa5b4; --accent:#4338ca; --accent-soft:#e8e6fb;
@@ -5,12 +6,14 @@
   --shadow:0 1px 2px rgba(16,21,28,.06), 0 8px 24px -12px rgba(16,21,28,.14);
   --font:var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif; --serif:var(--font-serif), Georgia, serif;
 }
+/* Dark palette, used when the visitor's system is set to dark. */
 @media (prefers-color-scheme: dark) { :root {
   --bg:#0c1016; --surface:#151b24; --surface2:#1d2530; --fg:#e8eaee; --muted:#9aa3b2; --line:#263040;
   --ink:#070a0f; --accent:#8b83ff; --accent-soft:#1f1d46;
   --good:#6fd39a; --good-bg:#12301f; --warn:#f0b24d; --warn-bg:#35270c; --bad:#f58c84; --bad-bg:#3b1b19; --info:#8fb4f5; --info-bg:#172641;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6); color-scheme:dark;
 } }
+/* Base: sizing, page background, text, headings, buttons and focus rings. */
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 var(--font); padding-bottom:40px; }
 .wrap { max-width:1080px; margin:0 auto; padding:0 16px; display:flex; flex-direction:column; gap:20px; min-width:0; }
@@ -21,11 +24,13 @@ h3 { font-size:1rem; font-weight:600; }
 button { font:inherit; cursor:pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
 
+/* Top bar and brand. */
 .bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; }
 .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.01em; }
 .logo { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--accent),#c026d3); display:grid; place-items:center; color:#fff; font-size:15px; }
 .tag { font-size:.8rem; color:var(--muted); }
 
+/* Hero: gradient panel, headline, glass URL box, optional traffic-source text and pillar chips. */
 .hero { position:relative; overflow:hidden; border-radius:28px; color:var(--ink-fg); padding:48px 28px 32px; box-shadow:var(--shadow);
   background:radial-gradient(1000px 480px at 88% -10%, #4f46e5 0%, transparent 55%), radial-gradient(700px 380px at -5% 115%, #be185d 0%, transparent 50%), var(--ink); }
 .hero h1 { font-family:var(--serif); font-weight:500; font-size:clamp(1.9rem,5.2vw,3.1rem); line-height:1.08; letter-spacing:-.02em; max-width:18ch; text-wrap:balance; }
@@ -43,11 +48,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .chips span { font-size:.78rem; padding:5px 11px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); color:#d6dbe5; }
 .hero .err { margin-top:14px; max-width:760px; background:rgba(180,40,31,.25); border:1px solid rgba(245,140,132,.5); color:#ffd9d6; padding:10px 14px; border-radius:12px; }
 
+/* Cards, notices and the shared button style for results. */
 .card { background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:var(--shadow); }
 .card > h2 { margin-bottom:6px; } .card > .sub { margin-bottom:14px; }
 .notice { border-radius:16px; padding:14px 18px; background:var(--warn-bg); color:var(--fg); border:1px solid var(--line); }
 .notice b { color:var(--warn); }
 
+/* Progress steps shown while an audit runs (spinner is switched off for reduced-motion users). */
 .progress { display:flex; flex-direction:column; gap:10px; }
 .step { display:flex; align-items:center; gap:10px; color:var(--muted); }
 .step i { width:18px; height:18px; border-radius:50%; border:2px solid var(--line); flex:none; display:grid; place-items:center; font-style:normal; font-size:11px; }
@@ -56,6 +63,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 @keyframes spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .step.now i { animation:none; border-top-color:var(--accent); } .go { transition:none; } }
 
+/* Score ring, headline chips and confidence colours. */
 .scorecard { display:grid; grid-template-columns:auto 1fr; gap:28px; align-items:center; }
 .ring { position:relative; width:168px; height:168px; }
 .ring svg { transform:rotate(-90deg); }
@@ -69,6 +77,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .verdict { font-family:var(--serif); font-size:1.5rem; font-weight:600; letter-spacing:-.01em; }
 .url { word-break:break-all; }
 
+/* Pillar cards and their score meters. */
 .pgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(235px,1fr)); gap:12px; margin-top:14px; }
 .pcard { border:1px solid var(--line); border-radius:14px; padding:14px; background:var(--bg); }
 .pcard .top { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
@@ -76,10 +85,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .meter { height:6px; border-radius:99px; background:var(--line); margin:10px 0 8px; overflow:hidden; } .meter > div { height:100%; border-radius:99px; }
 .pcard p { font-size:.82rem; color:var(--muted); }
 
+/* Logic table: scrolls sideways on narrow screens instead of breaking the layout. */
 .tablewrap { overflow-x:auto; margin-top:6px; }
 table { width:100%; border-collapse:collapse; font-size:.88rem; min-width:560px; } th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
 th { font-size:.75rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; } .total td { font-weight:700; border-bottom:0; }
 
+/* Findings and plan items. The left stripe shows severity (3 red, 2 amber, 1 blue). */
 .item { border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-top:10px; border-left-width:4px; }
 .item.s3 { border-left-color:var(--bad); } .item.s2 { border-left-color:var(--warn); } .item.s1 { border-left-color:var(--info); }
 .item .head { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px; } .item p { margin:6px 0; }
@@ -90,7 +101,9 @@ q { quotes:"“" "”"; font-style:italic; }
 pre { overflow:auto; font-size:12px; max-height:420px; background:var(--bg); padding:12px; border-radius:10px; }
 details > summary { cursor:pointer; font-weight:600; }
 
+/* Two columns that stack when there is not enough width. */
 .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; }
+/* Phone layout. */
 @media (max-width:640px) {
   .hero { padding:32px 18px 22px; border-radius:22px; }
   .urlbox { flex-direction:column; } .go { min-height:46px; }
@@ -98,11 +111,13 @@ details > summary { cursor:pointer; font-weight:600; }
   .card { padding:16px; }
 }
 
+/* "How this agent works" section and its comparison table. */
 .qa { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); } .qa h3 { font-family:var(--serif); font-size:1.12rem; margin-bottom:8px; }
 .qa p { max-width:75ch; } .qa ul { max-width:80ch; }
 .cmp td:first-child { font-weight:600; white-space:nowrap; } .cmp td:nth-child(2) { color:var(--muted); } .cmp td:nth-child(3) { background:var(--accent-soft); }
 code { font-size:.88em; background:var(--surface2); padding:1px 6px; border-radius:6px; }
 
+/* History list, saved-report actions and the PDF button bar. */
 .row { display:flex; justify-content:space-between; align-items:center; gap:12px; } .row h2 { margin:0; }
 .link { background:none; border:0; color:var(--accent); font:inherit; font-size:.85rem; cursor:pointer; text-decoration:underline; padding:4px; }
 .hlist { display:flex; flex-direction:column; gap:6px; }
@@ -115,6 +130,10 @@ code { font-size:.88em; background:var(--surface2); padding:1px 6px; border-radi
 .exportbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
 .printhead { display:none; }
 
+/*
+ * PDF / print: the report on a light palette, without the form, history, notices, buttons and explainer.
+ * Colours are kept (print-color-adjust) and findings, cards and table rows are not split across pages.
+ */
 @media print {
   @page { margin:14mm; }
   :root { --bg:#fff; --surface:#fff; --surface2:#f1efe9; --fg:#16181d; --muted:#5e6470; --line:#d9d5ca; --accent:#4338ca; --accent-soft:#e8e6fb;

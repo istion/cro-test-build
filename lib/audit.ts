@@ -6,6 +6,10 @@ import { rulesReport } from "./rules";
 import { computeScore, rankRecommendations, PAGE_TYPES, ANCHORS, rubric, PillarIn, ScoringError } from "./scoring";
 
 
+/**
+ * The agent's standing instructions. Sections: trust boundaries (page text is data), what it may and may not do,
+ * why output must be page-specific, how to score, and rules for recommendations. The rubric anchors and weights are appended in runAudit.
+ */
 export const SYSTEM = `You are the CRO Score Agent, a senior conversion rate optimisation auditor. You audit ONE page.
 You are read-only and advisory. Your job is to be specific to this page, never generic.
 
@@ -40,6 +44,10 @@ RECOMMENDATIONS
 
 Write in plain language a client can act on, e.g. "the first button reads 'Learn more' and does not say what happens next".`;
 
+/**
+ * Schema of the one function the model must call to hand in its audit. Quotes in `ledger` are verified by code afterwards;
+ * `pillars` covers only pillars 1 to 6 because pillar 7 is scored by code and pillar 8 needs data a public page cannot give.
+ */
 export const SUBMIT = {
   name: "submit_audit",
   description: "Submit the finished audit once.",
@@ -71,11 +79,16 @@ export const SUBMIT = {
   },
 } as const;
 
+/** Detects a numeric or promised uplift ("20% uplift", "will double conversions", "guaranteed lift"). Recommendations may only say low, medium or high. */
 const UPLIFT = /(\d+(\.\d+)?\s?%\s*(uplift|lift|increase|improvement|more (conversions|sales|revenue))|(increase|boost|improve|raise|lift)s?\s+(conversions?|sales|revenue|conversion rate)\s+by\s+\d|\b(will|should)\s+(double|triple)\b|\bguaranteed? (uplift|lift|increase)\b)/i;
+/** Detects dark-pattern wording in a recommendation: fake urgency or scarcity, countdown timers, pre-ticked boxes, hidden fees, guilt wording, invented reviews. */
 const DARK = /(fake|false|artificial|manufactured)\s+(urgency|scarcity|countdown|stock)|countdown timer|pre-?ticked|pre-?checked|hidden (fee|cost|charge)s?|guilt|confirmshaming|(add|invent|create|show)\s+(a\s+)?(fake|made-up|invented)\s+(review|testimonial|discount)/gi;
+/** A negation within the 50 characters before a match ("avoid fake urgency") means the text is warning against the pattern, not proposing it. */
 const NEG = /\b(avoid|never|do not|don't|without|no)\b[^.]{0,40}$/i;
+/** Normalises text for quote matching: lower-case, collapse whitespace (including non-breaking spaces), straighten curly quotes. */
 const norm = (s: string) => s.toLowerCase().replace(/[\s ]+/g, " ").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').trim();
 
+/** Returns the first dark-pattern phrase in the text that is not negated, or null. */
 function darkPattern(text: string) {
   for (const m of text.matchAll(DARK)) if (!NEG.test(text.slice(Math.max(0, (m.index ?? 0) - 50), m.index))) return m[0];
   return null;
@@ -94,6 +107,13 @@ export function groundLedger(ledger: any[], haystack: string) {
   return { ledger: out, notes };
 }
 
+/**
+ * Checks the model's answer against the rules and returns a list of problems (empty means it passed).
+ *
+ * Rules: ledger ids unique; a pillar scored below 100 must cite at least one ledger entry that is not a hypothesis;
+ * every finding needs valid evidence, and severity 3 needs a verified entry; every recommendation links to real findings,
+ * makes no numeric or promised uplift, resembles no dark pattern, and a level 3 change cannot be a "small" quick win.
+ */
 export function selfCheck(r: any, ledger: any[]): string[] {
   const problems: string[] = [];
   const byId = new Map(ledger.map((e) => [e.id, e]));
@@ -120,6 +140,10 @@ export function selfCheck(r: any, ledger: any[]): string[] {
   return problems;
 }
 
+/**
+ * Removes the items a self-check problem points at: failing recommendations and findings are dropped, and a failing
+ * pillar becomes needs_data. Returns a note per removal so the report can say what was left out and why.
+ */
 function strip(r: any, problems: string[]) {
   const text = problems.join("\n"), dropped: string[] = [];
   const keep = (arr: any[], label: string) => arr.filter((x) => { const bad = text.includes(`${label} ${x.id}:`); if (bad) dropped.push(`${label} ${x.id} removed: failed the self-check`); return !bad; });
@@ -129,16 +153,29 @@ function strip(r: any, problems: string[]) {
   return dropped;
 }
 
+/** What the caller supplies: the page URL, optionally the ad / email / search text that brought visitors, and a stated goal. */
 export type AuditInput = { url: string; trafficSource?: string; goal?: string };
 
+/**
+ * Runs a complete audit and returns the result object shown in the UI.
+ *
+ * Steps: inspect the page; ask the model for judgements (one correction call if the self-check fails and time allows);
+ * verify quotes; apply the code-owned rules (pillar 7 from tool data, pillar 8 never scored, pillar 2 and 6 partial);
+ * compute the score; rank recommendations; add flags and limitations. If the model is unavailable the rules-only fallback
+ * answers instead and the result says so. Returns `could_not_audit` (no score) when the page cannot be read.
+ */
 export async function runAudit(input: AuditInput) {
+  // Start of the whole request: the time budget below counts page inspection too.
   const t0 = Date.now(); // the route allows 180 s in total; page inspection counts against it
   const ins: Inspection = await inspect(input.url);
   if (ins.couldNotAudit) return { could_not_audit: ins.couldNotAudit, url: input.url, integrity_flags: ins.flags, fetched_at: ins.fetchedAt };
 
+  // Everything a quote may legitimately come from: the page text and the measured facts.
   const haystack = ins.text + "\n" + JSON.stringify(ins.facts);
+  // Rubric anchors (what 0, 50 and 100 mean for each pillar) go to the model with the weights.
   const anchors = Object.fromEntries(Object.entries(ANCHORS).map(([k, v]) => [k, v]));
   const system = `${SYSTEM}\n\nRUBRIC (use exactly)\n${JSON.stringify({ pillars: anchors, weights: rubric.weights })}`;
+  // The user message. The page text and facts travel inside <page_content> tags marked untrusted; the traffic source is wrapped the same way.
   const userMsg = [
     `Audit this page: ${ins.finalUrl}`, input.goal ? `User-stated goal: ${input.goal}` : "",
     input.trafficSource ? `Traffic source supplied (pillar 2 may be 'scored'):\n<external_source trust="untrusted">\n${input.trafficSource.slice(0, 1500).replace(/<\/?external_source>/gi, "")}\n</external_source>` : "No traffic source supplied: pillar 2 can only be 'partial' (internal consistency).",
@@ -148,12 +185,16 @@ export async function runAudit(input: AuditInput) {
 
   const provider = pickProvider();
   if (!provider) throw new Error("NO_KEY");
+  // report: the model's answer; ledger: its evidence list after verification; groundNotes / dropped: notes for the limitations section.
   let report: any = null, ledger: any[] = [], groundNotes: string[] = [], dropped: string[] = [];
   let user = userMsg;
+  // One deadline shared by every model call, so a slow first call cannot push the request past the platform limit.
   const deadline = t0 + 140_000; // shared by every model call, measured from the start of the request
 
+  // Set to a short reason when the rules-only fallback was used.
   let fallback: string | null = null;
   try {
+    // Attempt 0 is the audit; attempt 1 is the optional correction pass.
     for (let attempt = 0; attempt < 2; attempt++) {
       let next: any;
       try { next = await callStructured({ provider, system, user, tool: SUBMIT as any, deadline }); }
@@ -163,31 +204,41 @@ export async function runAudit(input: AuditInput) {
         dropped = strip(report, selfCheck(report, ledger));
         break;
       }
+      // Verify every quote against the fetched page, then run the rule checks.
       report = next;
       ({ ledger, notes: groundNotes } = groundLedger(report.ledger ?? [], haystack) as any);
       const problems = selfCheck(report, ledger);
+      // Clean answer: done.
       if (!problems.length) { dropped = []; break; }
       // A second model call only if enough time is left; otherwise remove what failed rather than risk a timeout.
+      // No correction call on the second pass, or with under 60 s left: remove what failed instead of risking a timeout.
       if (attempt === 1 || deadline - Date.now() < 60_000) { dropped = strip(report, problems); break; }
+      // Correction call: tell the model exactly which checks failed and show its previous answer.
       user = [userMsg, "Your previous submission failed the code check. Submit a corrected audit that fixes exactly these problems:",
         ...problems.map((p) => `- ${p}`), "Previous submission:", JSON.stringify(report)].join("\n\n");
     }
   } catch (e) {
     // Model busy, out of quota or too slow: return a clearly labelled rules-only audit instead of an error.
+    // Only "model unavailable" style errors fall back; anything else (a bug, a bad request) is rethrown so it is visible.
     const why = (e as Error).message;
     if (!["RATE_LIMITED", "MODEL_BUSY", "TIMEOUT"].includes(why) && (e as Error).name !== "TimeoutError" && !/not available|did not return|Gemini returned/.test(why)) throw e;
     console.log(`falling back to rules-only audit: ${why}`);
+    // Fixed checks on the markup. Its ledger goes through the same quote verification as a model audit.
     const rr = rulesReport(ins);
     report = rr.report; ledger = groundLedger(rr.ledger, haystack).ledger; groundNotes = []; dropped = [];
     fallback = why === "RATE_LIMITED" ? "the model's daily quota is used up" : why === "TIMEOUT" ? "the model was too slow" : why === "MODEL_BUSY" ? "the model was busy" : "the model could not be reached";
   }
 
+  // Notes about adjustments made to the model's scores, shown under limitations.
   const normNotes: string[] = [];
   // Code owns statuses and pillar 7.
+  // Pillar 7 is decided by code from Core Web Vitals; the model has no say.
   const speed = speedPillar(ins.diagnostics);
+  // When speed was measured, add it to the evidence ledger as a verified, measured entry.
   const speedEntry = speed.status === "scored"
     ? { id: "E-T01", pillar: 7, observation: "Core Web Vitals from PageSpeed Insights (lab)", quote: JSON.stringify(ins.diagnostics), location: "PageSpeed Insights, mobile", evidence_type: "measured", verified: true } : null;
   if (speedEntry) ledger.push(speedEntry);
+  // Pillars 1 to 6 from the model (cleaned up), pillar 7 from code, pillar 8 always needs data.
   const pillars: PillarIn[] = [
     ...report.pillars.filter((p: any) => p.id >= 1 && p.id <= 6).map((p: any) => {
       // Models sometimes return 63 or "70". Snap to the rubric's steps of 5 and say so; a missing score means the pillar was not judged.
@@ -202,9 +253,12 @@ export async function runAudit(input: AuditInput) {
     { id: 7, ...speed, evidence_ids: speedEntry ? ["E-T01"] : [], interpretation: speed.status === "scored" ? "Scored by code from PageSpeed Insights bands." : String(ins.diagnostics.could_not_test) },
     { id: 8, status: "needs_data", interpretation: "A public audit cannot see visitor behaviour. Behaviour data such as analytics exports is not used in a public audit." },
   ];
+  // Safety net: any pillar the model skipped is recorded as needs_data rather than crashing the score engine.
   for (let i = 1; i <= 8; i++) if (!pillars.find((p) => p.id === i)) pillars.push({ id: i, status: "needs_data" });
 
+  // The page type the model chose decides which weight table applies.
   const pageType = report.page.page_type;
+  // Confidence downgrades: each uncertainty about what a visitor really sees lowers confidence by one level.
   const downgrade: string[] = [];
   if (report.page.page_type_confidence === "low") downgrade.push("page type is unclear");
   if (report.page.page_type_is_other) downgrade.push("page does not fit the six types");
@@ -213,25 +267,32 @@ export async function runAudit(input: AuditInput) {
   if (ins.facts.redirected) downgrade.push("the URL redirected");
   downgrade.push("only the static HTML was inspected (no rendered viewports)");
   const weights = (rubric.weights as any)[pageType] as Record<string, number>;
+  // A tool failure on a pillar weighing 14 or more forces Low confidence.
   const forceLow = pillars.some((p) => p.status === "could_not_test" && weights[p.id] >= 14);
 
+  // computeScore throws ScoringError on inputs that break the rubric; that becomes a could-not-score result, never a wrong number.
   let score;
   try { score = computeScore(pageType, pillars, { downgrade, forceLow }); }
   catch (e) { if (e instanceof ScoringError) return { could_not_audit: `The audit could not be scored: ${e.message}`, url: input.url, integrity_flags: ins.flags, fetched_at: ins.fetchedAt }; throw e; }
 
   // Evidence strength is derived from verified ledger entries, not self-reported.
+  // Evidence strength of a recommendation: the strongest verified ledger type among its findings.
   const evOf = (fids: string[]) => {
     const ids = (report.findings as any[]).filter((f) => fids.includes(f.id)).flatMap((f) => f.evidence_ids);
     const types = ids.map((i: string) => ledger.find((e) => e.id === i)?.evidence_type);
     return types.includes("measured") ? "measured" : types.includes("observed") ? "observed" : "hypothesis";
   };
+  // Severity of a recommendation: the highest severity among its findings.
   const sev = (fids: string[]) => Math.max(1, ...(report.findings as any[]).filter((f) => fids.includes(f.id)).map((f) => f.severity));
+  // Rank by priority and assign effort buckets.
   const recs = rankRecommendations((report.recommendations as any[]).map((r) => ({ ...r, evidence: evOf(r.finding_ids), severity: sev(r.finding_ids) })));
 
+  // Items a person should look at: the model's flags, regulated claims found on the page, and every level 2 or 3 change.
   const human: string[] = [...(report.human_review_flags ?? [])];
   ins.claims.forEach((c) => human.push(`Regulated or outcome claim on the page: "${c}"`));
   recs.filter((r) => r.approval_level >= 2).forEach((r) => human.push(`Level ${r.approval_level} change needs owner approval: ${r.id}`));
 
+  // The honest list of what this audit did not or could not do, shown to the user.
   const limits = [
     ...(fallback ? [`Rules-only fallback because ${fallback}.`] : []),
     ...(report.limitations ?? []),
