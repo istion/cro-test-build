@@ -1,4 +1,4 @@
-// Page inspector: static HTML measurements, Shopify public data, optional PageSpeed. Tools measure; the model judges.
+// Page inspector: static HTML measurements, optional PageSpeed. Tools measure; the model judges.
 import * as cheerio from "cheerio";
 import { safeFetch, robotsAllows, FetchBlocked } from "./guard";
 import { scan, scanClaims, IntegrityFlag } from "./injection";
@@ -11,7 +11,6 @@ export interface Inspection {
   text: string;
   flags: IntegrityFlag[];
   claims: string[];
-  shopify: boolean;
   diagnostics: Record<string, any>;
 }
 
@@ -20,7 +19,7 @@ const BLOCK = /(captcha|are you a robot|access denied|verify you are human|unusu
 
 export async function inspect(rawUrl: string): Promise<Inspection> {
   const fetchedAt = new Date().toISOString();
-  const base = { url: rawUrl, finalUrl: rawUrl, fetchedAt, facts: {}, text: "", flags: [], claims: [], shopify: false, diagnostics: {} } as Inspection;
+  const base = { url: rawUrl, finalUrl: rawUrl, fetchedAt, facts: {}, text: "", flags: [], claims: [], diagnostics: {} } as Inspection;
   const stop = (why: string): Inspection => ({ ...base, couldNotAudit: why });
 
   let res;
@@ -57,7 +56,6 @@ export async function inspect(rawUrl: string): Promise<Inspection> {
 
   const html = res.body;
   const final = new URL(res.url);
-  const shopify = /cdn\.shopify\.com|Shopify\.theme|myshopify\.com/i.test(html);
   const headings = $("h1,h2,h3,h4").map((_, e) => `${e.tagName.toUpperCase()}: ${$(e).text().trim().slice(0, 90)}`).get().slice(0, 40);
   const levels = $("h1,h2,h3,h4,h5,h6").map((_, e) => +e.tagName[1]).get();
   const ctas = $("a[href], button, input[type=submit], [role=button]").map((i, e) => {
@@ -108,32 +106,10 @@ export async function inspect(rawUrl: string): Promise<Inspection> {
     consent_banner_in_markup: /cookie[-_ ]?(banner|consent)|onetrust|cookiebot|usercentrics/i.test(html),
     not_measured_in_this_version: ["tap target size", "text contrast", "viewport screenshots", "above-the-fold position in pixels", "rendered (JavaScript) content"],
   };
-  Object.assign(base, { finalUrl: res.url, facts, text, flags, claims: scanClaims(text), shopify });
+  Object.assign(base, { finalUrl: res.url, facts, text, flags, claims: scanClaims(text) });
 
-  if (shopify) base.facts.shopify = await shopifyFacts(final);
   base.diagnostics = await pageSpeed(res.url);
   return base;
-}
-
-/** Public Shopify product JSON (no login, no admin API). Only fields the store itself publishes. */
-async function shopifyFacts(u: URL) {
-  const m = u.pathname.match(/\/products\/([^/?#]+)/);
-  if (!m) return { detected: true, note: "Shopify store detected. Product-level data is read only on /products/<handle> pages." };
-  try {
-    const r = await safeFetch(`${u.origin}/products/${m[1]}.json`, { maxBytes: 500_000, accept: "application/json" });
-    if (r.status !== 200) return { detected: true, note: `Product JSON not available (HTTP ${r.status})` };
-    const p = JSON.parse(r.body).product;
-    const v = p.variants ?? [];
-    const prices = v.map((x: any) => parseFloat(x.price)).filter(Number.isFinite);
-    return {
-      detected: true, source: `${u.origin}/products/${m[1]}.json`, title: p.title, variants: v.length,
-      price_min: prices.length ? Math.min(...prices) : null, price_max: prices.length ? Math.max(...prices) : null,
-      compare_at_price_shown: v.some((x: any) => x.compare_at_price && parseFloat(x.compare_at_price) > parseFloat(x.price)),
-      any_variant_available: v.some((x: any) => x.available), all_variants_available: v.every((x: any) => x.available),
-      images: (p.images ?? []).length, images_missing_alt: (p.images ?? []).filter((i: any) => !i.alt).length,
-      description_chars: String(p.body_html ?? "").replace(/<[^>]+>/g, "").length,
-    };
-  } catch (e) { return { detected: true, note: `Product JSON could not be read: ${(e as Error).message.slice(0, 100)}` }; }
 }
 
 /** Core Web Vitals via PageSpeed Insights. Returns could_not_test when no key or the call fails. */

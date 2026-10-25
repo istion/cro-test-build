@@ -200,7 +200,7 @@ export async function runAudit(input: AuditInput) {
       return { id: p.id, status, score: snapped, evidence_ids: p.evidence_ids ?? [], interpretation: p.interpretation };
     }),
     { id: 7, ...speed, evidence_ids: speedEntry ? ["E-T01"] : [], interpretation: speed.status === "scored" ? "Scored by code from PageSpeed Insights bands." : String(ins.diagnostics.could_not_test) },
-    { id: 8, status: "needs_data", interpretation: "A public audit cannot see visitor behaviour. Supply GA4 or Shopify analytics to score this." },
+    { id: 8, status: "needs_data", interpretation: "A public audit cannot see visitor behaviour. Behaviour data such as analytics exports is not used in a public audit." },
   ];
   for (let i = 1; i <= 8; i++) if (!pillars.find((p) => p.id === i)) pillars.push({ id: i, status: "needs_data" });
 
@@ -248,7 +248,7 @@ export async function runAudit(input: AuditInput) {
     rubric_version: rubric.rubric_version,
     audit: { url: input.url, final_url: ins.finalUrl, fetched_at: ins.fetchedAt, mode: "public", page_type: pageType,
       page_type_confidence: report.page.page_type_confidence, inferred_goal: report.page.inferred_goal, goal_basis: report.page.goal_basis ?? null,
-      shopify: ins.shopify, traffic_source_supplied: !!input.trafficSource },
+      traffic_source_supplied: !!input.trafficSource },
     score, ledger, findings: report.findings, recommendations: recs,
     integrity_flags: ins.flags, limitations: limits, human_review_flags: human,
     facts: ins.facts, diagnostics: ins.diagnostics, fallback: fallback ? { mode: "rules-only", reason: fallback } : null,

@@ -20,7 +20,7 @@ npm test
 ```
 
 ## How it works
-- `lib/inspect.ts` fetches the page (SSRF-guarded, robots.txt respected) and measures facts with cheerio. On Shopify product pages it also reads the store's public `/products/<handle>.json`.
+- `lib/inspect.ts` fetches the page (SSRF-guarded, robots.txt respected) and measures facts with cheerio.
 - `lib/audit.ts` sends facts and page text, tagged as untrusted, to the model (Gemini or Claude), which must return quotes copied from the page. Code verifies every quote; unverifiable ones become hypotheses and cannot lower the score.
 - `lib/scoring.ts` computes score, coverage, confidence and priority. The model never does arithmetic.
 - `lib/rubric.json` holds the versioned pillars, anchors, weights and thresholds.

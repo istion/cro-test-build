@@ -5,7 +5,7 @@ import type { Inspection } from "./inspect";
 type Pillar = { id: number; status: "scored" | "partial" | "needs_data"; score?: number; evidence_ids: string[]; interpretation: string };
 
 export function rulesReport(ins: Inspection) {
-  const f = ins.facts, cues = f.cues ?? {}, sh = f.shopify;
+  const f = ins.facts, cues = f.cues ?? {};
   const ledger: any[] = [], findings: any[] = [], recs: any[] = [];
   let e = 0, n = 0, r = 0;
   const ev = (pillar: number, observation: string, quote: string, location: string) => {
@@ -53,8 +53,6 @@ export function rulesReport(ins: Inspection) {
   if (cues.shipping) { p4.evidence_ids.push(ev(4, "Shipping or delivery is mentioned", bool("shipping", true), "facts.cues")); s4 += 10; }
   else { const id = ev(4, "Shipping or delivery is not mentioned", bool("shipping", false), "facts.cues"); p4.evidence_ids.push(id); s4 -= 10;
     finding(4, 2, "Shipping or delivery information was not found on the page.", "Surprise delivery costs and times are a common reason to abandon before checkout.", [id], "State delivery cost and timing near the price.", "medium", "small", 1, "Add-to-cart rate"); }
-  if (sh && sh.any_variant_available === false) { const id = ev(4, "Every product variant is unavailable", `"any_variant_available":false`, "facts.shopify"); p4.evidence_ids.push(id); s4 -= 15;
-    finding(4, 3, "Shopify reports that no variant of this product is available.", "A visitor cannot buy, so purchase intent is lost unless there is another path.", [id], "Offer a back-in-stock sign-up and link to similar available products.", "high", "medium", 2, "Back-in-stock sign-ups"); }
   p4.score = clamp(s4); p4.interpretation = "Presence of price, shipping and availability only. Whether terms are clear was not judged.";
 
   // Pillar 5: trust
@@ -82,7 +80,7 @@ export function rulesReport(ins: Inspection) {
   p6.score = clamp(s6); p6.interpretation = "Markup checks only. Layout, contrast and tap targets were not measured.";
 
   const pillars: Pillar[] = [p1, { id: 2, status: "needs_data", evidence_ids: [], interpretation: "Needs the traffic source or ad to judge message match." }, p3, p4, p5, p6];
-  const isProduct = !!sh?.title || /\/products?\//i.test(ins.finalUrl);
+  const isProduct = /\/products?\//i.test(ins.finalUrl);
   return {
     report: {
       page: { page_type: isProduct ? "product" : "landing", page_type_confidence: "low", inferred_goal: "Not judged in rules-only mode", goal_basis: "Guessed from the URL path only" },
