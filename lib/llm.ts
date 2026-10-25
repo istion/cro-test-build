@@ -58,7 +58,9 @@ export async function callStructured(opts: { provider: Provider; system: string;
     generationConfig: { temperature: 0.2, maxOutputTokens: 12000, ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}) },
   });
   const deadline = opts.deadline ?? Date.now() + 100_000;
-  const models = geminiModels();
+  const base = geminiModels();
+  // 503s are usually momentary and return in seconds, so cycle through the models twice before giving up.
+  const models = [...base, ...base];
   let last = "MODEL_BUSY";
   for (let i = 0; i < models.length; i++) {
     const remaining = deadline - Date.now();
@@ -73,7 +75,7 @@ export async function callStructured(opts: { provider: Provider; system: string;
       });
       console.log(`gemini ${models[i]} -> HTTP ${res.status} in ${Date.now() - t0}ms (budget ${Math.floor(budget)}ms)`);
       if (res.status === 429) { last = "RATE_LIMITED"; continue; }
-      if (res.status === 503 || res.status === 500) { last = "MODEL_BUSY"; continue; }
+      if (res.status === 503 || res.status === 500) { last = "MODEL_BUSY"; await new Promise((r) => setTimeout(r, 1500)); continue; }
       if (res.status === 404) { last = `Model ${models[i]} is not available to this key`; continue; }
       if (!res.ok) throw new Error(`Gemini returned HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
       const data = await res.json();

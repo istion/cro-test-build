@@ -148,15 +148,23 @@ export async function runAudit(input: AuditInput) {
   if (!provider) throw new Error("NO_KEY");
   let report: any = null, ledger: any[] = [], groundNotes: string[] = [], dropped: string[] = [];
   let user = userMsg;
-  const deadline = Date.now() + 100_000; // shared by every model call; the route allows 120 s in total
+  const deadline = Date.now() + 90_000; // shared by every model call; the route allows 120 s in total
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    report = await callStructured({ provider, system, user, tool: SUBMIT as any, deadline });
+    let next: any;
+    try { next = await callStructured({ provider, system, user, tool: SUBMIT as any, deadline }); }
+    catch (e) {
+      // A failed correction call must not throw away a first answer we already have.
+      if (attempt === 0 || !report) throw e;
+      dropped = strip(report, selfCheck(report, ledger));
+      break;
+    }
+    report = next;
     ({ ledger, notes: groundNotes } = groundLedger(report.ledger ?? [], haystack) as any);
     const problems = selfCheck(report, ledger);
     if (!problems.length) { dropped = []; break; }
     // A second model call only if enough time is left; otherwise remove what failed rather than risk a timeout.
-    if (attempt === 1 || deadline - Date.now() < 45_000) { dropped = strip(report, problems); break; }
+    if (attempt === 1 || deadline - Date.now() < 60_000) { dropped = strip(report, problems); break; }
     user = [userMsg, "Your previous submission failed the code check. Submit a corrected audit that fixes exactly these problems:",
       ...problems.map((p) => `- ${p}`), "Previous submission:", JSON.stringify(report)].join("\n\n");
   }
