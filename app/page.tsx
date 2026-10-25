@@ -43,6 +43,11 @@ export default function Home() {
           {r.integrity_flags?.length > 0 && <Flags flags={r.integrity_flags} />}</section>
       )}
 
+      {r?.fallback && (
+        <section className="card warn"><h2>Rules-only result</h2>
+          <p>The AI audit was unavailable because {r.fallback.reason}. This score comes from fixed checks on the page markup, so it has limited coverage and generic findings. Try again later for the full agent audit.</p></section>
+      )}
+
       {r?.score && <Report r={r} />}
 
       <Explainer />

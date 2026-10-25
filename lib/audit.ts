@@ -2,6 +2,7 @@ import * as llm from "./llm";
 import { callStructured, pickProvider, modelName } from "./llm";
 import { inspect, speedPillar, Inspection } from "./inspect";
 import { wrapPage } from "./injection";
+import { rulesReport } from "./rules";
 import { computeScore, rankRecommendations, PAGE_TYPES, ANCHORS, rubric, PillarIn, ScoringError } from "./scoring";
 
 
@@ -150,23 +151,34 @@ export async function runAudit(input: AuditInput) {
   let user = userMsg;
   const deadline = Date.now() + 90_000; // shared by every model call; the route allows 120 s in total
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let next: any;
-    try { next = await callStructured({ provider, system, user, tool: SUBMIT as any, deadline }); }
-    catch (e) {
-      // A failed correction call must not throw away a first answer we already have.
-      if (attempt === 0 || !report) throw e;
-      dropped = strip(report, selfCheck(report, ledger));
-      break;
+  let fallback: string | null = null;
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let next: any;
+      try { next = await callStructured({ provider, system, user, tool: SUBMIT as any, deadline }); }
+      catch (e) {
+        // A failed correction call must not throw away a first answer we already have.
+        if (attempt === 0 || !report) throw e;
+        dropped = strip(report, selfCheck(report, ledger));
+        break;
+      }
+      report = next;
+      ({ ledger, notes: groundNotes } = groundLedger(report.ledger ?? [], haystack) as any);
+      const problems = selfCheck(report, ledger);
+      if (!problems.length) { dropped = []; break; }
+      // A second model call only if enough time is left; otherwise remove what failed rather than risk a timeout.
+      if (attempt === 1 || deadline - Date.now() < 60_000) { dropped = strip(report, problems); break; }
+      user = [userMsg, "Your previous submission failed the code check. Submit a corrected audit that fixes exactly these problems:",
+        ...problems.map((p) => `- ${p}`), "Previous submission:", JSON.stringify(report)].join("\n\n");
     }
-    report = next;
-    ({ ledger, notes: groundNotes } = groundLedger(report.ledger ?? [], haystack) as any);
-    const problems = selfCheck(report, ledger);
-    if (!problems.length) { dropped = []; break; }
-    // A second model call only if enough time is left; otherwise remove what failed rather than risk a timeout.
-    if (attempt === 1 || deadline - Date.now() < 60_000) { dropped = strip(report, problems); break; }
-    user = [userMsg, "Your previous submission failed the code check. Submit a corrected audit that fixes exactly these problems:",
-      ...problems.map((p) => `- ${p}`), "Previous submission:", JSON.stringify(report)].join("\n\n");
+  } catch (e) {
+    // Model busy, out of quota or too slow: return a clearly labelled rules-only audit instead of an error.
+    const why = (e as Error).message;
+    if (!["RATE_LIMITED", "MODEL_BUSY", "TIMEOUT"].includes(why) && (e as Error).name !== "TimeoutError" && !/not available|did not return|Gemini returned/.test(why)) throw e;
+    console.log(`falling back to rules-only audit: ${why}`);
+    const rr = rulesReport(ins);
+    report = rr.report; ledger = groundLedger(rr.ledger, haystack).ledger; groundNotes = []; dropped = [];
+    fallback = why === "RATE_LIMITED" ? "the model's daily quota is used up" : why === "TIMEOUT" ? "the model was too slow" : why === "MODEL_BUSY" ? "the model was busy" : "the model could not be reached";
   }
 
   const normNotes: string[] = [];
@@ -220,6 +232,7 @@ export async function runAudit(input: AuditInput) {
   recs.filter((r) => r.approval_level >= 2).forEach((r) => human.push(`Level ${r.approval_level} change needs owner approval: ${r.id}`));
 
   const limits = [
+    ...(fallback ? [`Rules-only fallback because ${fallback}.`] : []),
     ...(report.limitations ?? []),
     "Public audit of the static HTML only. Tap targets, text contrast, screenshots, pixel positions and JavaScript-rendered content were not measured.",
     "Visitor behaviour, true conversion rate and the cause of drop-off cannot be seen from a public page. Pillar 8 is excluded, not scored zero.",
@@ -237,6 +250,7 @@ export async function runAudit(input: AuditInput) {
       shopify: ins.shopify, traffic_source_supplied: !!input.trafficSource },
     score, ledger, findings: report.findings, recommendations: recs,
     integrity_flags: ins.flags, limitations: limits, human_review_flags: human,
-    facts: ins.facts, diagnostics: ins.diagnostics, model: `${provider}:${provider === "gemini" ? llm.usedModel || modelName(provider) : modelName(provider)}`,
+    facts: ins.facts, diagnostics: ins.diagnostics, fallback: fallback ? { mode: "rules-only", reason: fallback } : null,
+    model: fallback ? "rules-only (no model)" : `${provider}:${provider === "gemini" ? llm.usedModel || modelName(provider) : modelName(provider)}`,
   };
 }
